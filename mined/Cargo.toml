@@ -1,0 +1,17 @@
+[package]
+name = "mined"
+version = "0.1.0"
+authors = ["Aamaruvi Yogamani <38222826+Technical27@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "0.2.21", features = ["full"] }
+warp = "0.2.3"
+futures = "0.3.5"
+serde_cbor = "0.11.1"
+minelib = { path = "../minelib" }
+clap = "2.33.1"
+serde = { version = "1.0.110", features = ["derive"] }
+serde_yaml = "0.8"

@@ -1,0 +1,17 @@
+[package]
+name = "mineweb"
+version = "0.1.0"
+authors = ["Aamaruvi Yogamani <38222826+Technical27@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+yew = "0.16.2"
+wasm-bindgen = "0.2.62"
+minelib = { path = "../minelib" }
+web-sys = { version = "0.3.39", features = ["BinaryType", "MessageEvent", "WebSocket"] }
+js-sys = "0.3.39"
+serde_cbor = "0.11.1"

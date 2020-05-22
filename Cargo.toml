@@ -1,0 +1,2 @@
+[workspace]
+members = ["minelib", "mineweb", "minectl", "mined"]

@@ -1,0 +1,16 @@
+[config]
+default_to_workspace = false
+
+[tasks.build-web]
+command = "bash"
+args = ["./build-web.sh"]
+
+[tasks.build]
+command = "cargo"
+args = ["build", "--workspace", "--exclude", "mineweb"]
+dependencies = ["build-web"]
+
+[tasks.run]
+command = "cargo"
+args = ["run", "--bin", "mined", "--", "-c", "example.yml"]
+dependencies = ["build"]

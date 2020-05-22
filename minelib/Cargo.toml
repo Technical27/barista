@@ -1,0 +1,10 @@
+[package]
+name = "minelib"
+version = "0.1.0"
+authors = ["Aamaruvi Yogamani <38222826+Technical27@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0.110", features = ["derive"] }

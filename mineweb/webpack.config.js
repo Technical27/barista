@@ -1,0 +1,23 @@
+const path = require('path');
+const WasmPackPlugin = require('@wasm-tool/wasm-pack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+
+const distPath = path.resolve(__dirname, 'dist');
+module.exports = () => {
+  return {
+    entry: './bootstrap.js',
+    output: {
+      path: distPath,
+      filename: 'mineweb.js',
+      webassemblyModuleFilename: 'mineweb.wasm',
+    },
+    plugins: [
+      new CopyWebpackPlugin([{ from: './static', to: distPath }]),
+      new WasmPackPlugin({
+        crateDirectory: '.',
+        extraArgs: '--no-typescript',
+      }),
+    ],
+    watch: false,
+  };
+};
