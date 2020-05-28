@@ -8,7 +8,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(id: u64, config: ServerConfig) -> Self {
+    pub fn new(id: usize, config: ServerConfig) -> Self {
         Self {
             state: server::State::new(id, &config.name, 0),
             config,

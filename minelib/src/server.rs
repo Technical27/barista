@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {
-    pub id: u64,
+    pub id: usize,
     pub name: String,
     pub player_count: u64,
     pub status: Status,
 }
 
 impl State {
-    pub fn new(id: u64, name: &str, player_count: u64) -> Self {
+    pub fn new(id: usize, name: &str, player_count: u64) -> Self {
         Self {
             id,
             name: name.to_string(),

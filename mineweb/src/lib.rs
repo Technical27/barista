@@ -40,6 +40,15 @@ impl Model {
         callback.forget();
     }
 
+    fn handle_button(server: &server::State) -> Msg {
+        use server::Status;
+        match server.status {
+            Status::Open => Msg::StopServer(server.id),
+            Status::Stopped => Msg::StartServer(server.id),
+            _ => Msg::None,
+        }
+    }
+
     fn format_server(&self, server: &server::State) -> Html {
         let s = server.clone();
         html! {
@@ -53,7 +62,7 @@ impl Model {
                 <span class="server-status">{
                     format!("Status: {}", server.status)
                 }</span>
-                <button class="server-btn" onclick=self.link.callback(move |_| Msg::StartServer(s.id))>{
+                <button class="server-btn" onclick=self.link.callback(move |_| Self::handle_button(&s))>{
                     server.status
                 }</button>
             </div>
@@ -68,7 +77,9 @@ impl Model {
 
 enum Msg {
     Websocket(CommandResult),
-    StartServer(u64),
+    StartServer(usize),
+    StopServer(usize),
+    None,
 }
 
 impl Component for Model {
@@ -93,8 +104,11 @@ impl Component for Model {
         match msg {
             Msg::Websocket(res) => match res {
                 CommandResult::UpdateServers(servers) => self.server_list = servers,
+                CommandResult::UpdateServer(idx, server) => self.server_list[idx] = server,
             },
             Msg::StartServer(id) => self.send_ws(&Command::StartServer(id)),
+            Msg::StopServer(id) => self.send_ws(&Command::StopServer(id)),
+            Msg::None => return false,
         }
 
         true

@@ -29,6 +29,11 @@
 }
 
 .server-player-count,
-.server-status {
+.server-status,
+.server-btn {
   margin: 0.1em 1em;
+}
+
+.server-btn {
+  width: 20%;
 }

@@ -26,7 +26,7 @@ impl State {
         let mut servers = vec![];
         for i in 0..config.servers.len() {
             let s = config.servers[i].clone();
-            servers.push(Server::new(i as u64, s));
+            servers.push(Server::new(i, s));
         }
         Self { servers }
     }
@@ -46,7 +46,7 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                             return;
                         }
 
-                        let bytes = &data.as_bytes()[..];
+                        let bytes = &data.as_bytes();
                         let cmd = match serde_cbor::from_slice::<Command>(bytes) {
                             Ok(v) => v,
                             Err(e) => return eprintln!("error parsing command: {:?}", e),
@@ -60,8 +60,14 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                         let res = match cmd {
                             Command::GetServers => CommandResult::UpdateServers(servers),
                             Command::StartServer(id) => {
-                                servers[id as usize].status = Status::Starting;
-                                CommandResult::UpdateServers(servers)
+                                let server = &mut servers[id];
+                                server.status = Status::Open;
+                                CommandResult::UpdateServer(id, server.clone())
+                            }
+                            Command::StopServer(id) => {
+                                let server = &mut servers[id];
+                                server.status = Status::Stopped;
+                                CommandResult::UpdateServer(id, server.clone())
                             }
                         };
 
