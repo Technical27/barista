@@ -1,9 +1,12 @@
 use minelib::command::*;
-use minelib::server::{Server, Status};
+use minelib::server::Server;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
 use yew::prelude::*;
+
+mod server;
+use server::ServerComponent;
 
 struct Model {
     link: ComponentLink<Self>,
@@ -40,45 +43,13 @@ impl Model {
         callback.forget();
     }
 
-    fn handle_button(server: &Server) -> Msg {
-        match server.status {
-            Status::Open => Msg::StopServer(server.id),
-            Status::Stopped => Msg::StartServer(server.id),
-            _ => Msg::None,
-        }
-    }
-
     fn format_server(&self, server: &Server) -> Html {
-        let s = server.clone();
-        html! {
-            <div class="server">
-                <span class="server-name">{
-                    server.name.clone()
-                }</span>
-                <span class="server-player-count">{
-                    format!("Player Count: {}", server.player_count)
-                }</span>
-                <span class="server-status">{
-                    format!("Status: {}", server.status)
-                }</span>
-                <button class="server-btn" onclick=self.link.callback(move |_| Self::handle_button(&s))>{
-                    server.status
-                }</button>
-            </div>
-        }
-    }
-
-    fn send_ws(&self, cmd: &Command) {
-        let data = serde_cbor::to_vec(&cmd).unwrap();
-        self.ws.send_with_u8_array(&data).unwrap();
+        html! { <ServerComponent server={server} /> }
     }
 }
 
 enum Msg {
     Websocket(CommandResult),
-    StartServer(usize),
-    StopServer(usize),
-    None,
 }
 
 impl Component for Model {
@@ -105,9 +76,6 @@ impl Component for Model {
                 CommandResult::UpdateServers(servers) => self.server_list = servers,
                 CommandResult::UpdateServer(idx, server) => self.server_list[idx] = server,
             },
-            Msg::StartServer(id) => self.send_ws(&Command::StartServer(id)),
-            Msg::StopServer(id) => self.send_ws(&Command::StopServer(id)),
-            Msg::None => return false,
         }
 
         true
