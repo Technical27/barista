@@ -1,7 +1,8 @@
 use clap::{App, Arg};
 use futures::{SinkExt, StreamExt};
 use minelib::command::*;
-use minelib::server::Status;
+use minelib::config::Config;
+use minelib::server::{Server, Status};
 use std::env;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -10,11 +11,6 @@ use tokio::prelude::*;
 use warp::ws::Message;
 use warp::Filter;
 
-mod config;
-mod server;
-
-use server::Server;
-
 static WEBSITE_PATH: &'static str = "mineweb/dist";
 
 struct State {
@@ -22,7 +18,7 @@ struct State {
 }
 
 impl State {
-    pub fn new(config: config::Config) -> Self {
+    pub fn new(config: Config) -> Self {
         let mut servers = vec![];
         for i in 0..config.servers.len() {
             let s = config.servers[i].clone();
@@ -54,7 +50,7 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
 
                         let mut servers = {
                             let lock = state.lock().expect("failed to lock mutex");
-                            lock.servers.clone().into_iter().map(|s| s.state).collect()
+                            lock.servers.clone()
                         };
 
                         let res = match cmd {
@@ -123,7 +119,7 @@ async fn main() {
         return eprintln!("failed to read config file: {}", e);
     }
 
-    let config = match serde_yaml::from_slice::<config::Config>(&config) {
+    let config = match serde_yaml::from_slice::<Config>(&config) {
         Ok(c) => c,
         Err(e) => return eprintln!("failed to parse config: {}", e),
     };

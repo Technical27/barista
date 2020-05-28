@@ -1,20 +1,23 @@
+use super::config::ServerConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct State {
+pub struct Server {
     pub id: usize,
     pub name: String,
     pub player_count: u64,
     pub status: Status,
+    pub config: ServerConfig,
 }
 
-impl State {
-    pub fn new(id: usize, name: &str, player_count: u64) -> Self {
+impl Server {
+    pub fn new(id: usize, config: ServerConfig) -> Self {
         Self {
             id,
-            name: name.to_string(),
-            player_count,
+            name: config.name.clone(),
+            player_count: 0,
             status: Status::Stopped,
+            config,
         }
     }
 }
@@ -26,6 +29,12 @@ pub enum Status {
     Stopping,
     Stopped,
     Crashed,
+}
+
+impl Default for Status {
+    fn default() -> Status {
+        Status::Stopped
+    }
 }
 
 impl std::fmt::Display for Status {

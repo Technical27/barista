@@ -1,5 +1,5 @@
 use minelib::command::*;
-use minelib::server;
+use minelib::server::{Server, Status};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
@@ -7,7 +7,7 @@ use yew::prelude::*;
 
 struct Model {
     link: ComponentLink<Self>,
-    server_list: Vec<server::State>,
+    server_list: Vec<Server>,
     ws: WebSocket,
 }
 
@@ -40,8 +40,7 @@ impl Model {
         callback.forget();
     }
 
-    fn handle_button(server: &server::State) -> Msg {
-        use server::Status;
+    fn handle_button(server: &Server) -> Msg {
         match server.status {
             Status::Open => Msg::StopServer(server.id),
             Status::Stopped => Msg::StartServer(server.id),
@@ -49,7 +48,7 @@ impl Model {
         }
     }
 
-    fn format_server(&self, server: &server::State) -> Html {
+    fn format_server(&self, server: &Server) -> Html {
         let s = server.clone();
         html! {
             <div class="server">
