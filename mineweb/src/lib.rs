@@ -1,50 +1,70 @@
+use log::{error, trace};
 use minelib::command::*;
 use minelib::server::Server;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
 use yew::prelude::*;
+use yew_router::components::RouterAnchor;
+use yew_router::router::Router;
+use yew_router::Switch;
 
 mod server;
-use server::ServerComponent;
+use server::ServerPage;
 
-struct Model {
+#[derive(Switch, Debug, Clone, Copy)]
+enum AppRoute {
+    #[to = "/"]
+    Index,
+}
+
+struct App {
     link: ComponentLink<Self>,
     server_list: Vec<Server>,
     ws: WebSocket,
+    nav_items: Vec<(&'static str, AppRoute)>,
 }
 
-impl Model {
+impl App {
     fn init_websocket(&self) {
         let ws = self.ws.clone();
         ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
-        let lnk = self.link.clone();
+        let link = self.link.clone();
         let callback = Closure::wrap(Box::new(move |e: MessageEvent| {
-            if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
+            match e.data().dyn_into::<js_sys::ArrayBuffer>().and_then(|abuf| {
                 let data = js_sys::Uint8Array::new(&abuf).to_vec();
-                if let Ok(msg) = serde_cbor::from_slice::<CommandResult>(&data[..]) {
-                    lnk.send_message(Msg::Websocket(msg));
+                serde_cbor::from_slice::<CommandResult>(&data).map_err(|e| e.to_string().into())
+            }) {
+                Ok(msg) => {
+                    trace!("new message: {:?}", msg);
+                    link.send_message(Msg::Websocket(msg));
                 }
+                Err(e) => error!("failed to get message: {:?}", e),
             }
         }) as Box<dyn FnMut(MessageEvent)>);
         ws.set_onmessage(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
 
         let ws_clone = ws.clone();
-        let callback =
-            Closure::wrap(
-                Box::new(move |_| match serde_cbor::to_vec(&Command::GetServers) {
-                    Ok(arr) => ws_clone.send_with_u8_array(&arr).unwrap(),
-                    Err(_) => {}
-                }) as Box<dyn FnMut(JsValue)>,
-            );
+        let callback = Closure::wrap(Box::new(move |_| {
+            if let Err(e) = serde_cbor::to_vec(&Command::GetServers)
+                .map_err(|e| e.to_string().into())
+                .and_then(|arr| ws_clone.send_with_u8_array(&arr))
+            {
+                error!("failed to get servers: {:?}", e)
+            }
+        }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
     }
 
-    fn format_server(&self, server: &Server) -> Html {
-        html! { <ServerComponent server={server} /> }
+    fn gen_link(&self, link: &(&'static str, AppRoute)) -> Html {
+        html! {
+            <RouterAnchor<AppRoute> route={link.1} classes="nav-item">
+                { link.0.clone() }
+            </RouterAnchor<AppRoute>>
+        }
     }
 }
 
@@ -52,7 +72,7 @@ enum Msg {
     Websocket(CommandResult),
 }
 
-impl Component for Model {
+impl Component for App {
     type Message = Msg;
     type Properties = ();
 
@@ -61,6 +81,7 @@ impl Component for Model {
             link,
             server_list: vec![],
             ws: WebSocket::new("ws://localhost:3000/cmd").unwrap(),
+            nav_items: vec![("Servers", AppRoute::Index)],
         };
         s.init_websocket();
         s
@@ -82,19 +103,29 @@ impl Component for Model {
     }
 
     fn view(&self) -> Html {
+        let s = self.server_list.clone();
+        let ws = self.ws.clone();
+        let routes = Router::<AppRoute, ()>::render(move |sw: AppRoute| match sw {
+            AppRoute::Index => html! {
+                <ServerPage servers={s.clone()} ws={ws.clone()}/>
+            },
+        });
         html! {
-            <>
-                <h1 id="title">{ "Minecraft Server Manager" }</h1>
-                <h2 class="subtitle">{ "Active Servers" }</h2>
-                <div id="server-list">
-                    { for self.server_list.iter().map(|s| self.format_server(s)) }
+            <div id="app">
+                <div id="nav-bar">
+                    <span id="nav-title">{ "Menu" }</span>
+                    { for self.nav_items.iter().map(|l| self.gen_link(l)) }
                 </div>
-            </>
+                <div id="page">
+                    <Router<AppRoute, ()> render={routes} />
+                </div>
+            </div>
         }
     }
 }
 
 #[wasm_bindgen]
 pub fn run() {
-    App::<Model>::new().mount_to_body();
+    web_logger::init();
+    yew::start_app::<App>();
 }

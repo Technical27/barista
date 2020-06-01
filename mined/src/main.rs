@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use futures::{SinkExt, StreamExt};
+use log::{error, info, warn};
 use minelib::command::*;
 use minelib::config::Config;
 use minelib::server::{Server, Status};
@@ -12,6 +13,7 @@ use warp::ws::Message;
 use warp::Filter;
 
 static WEBSITE_PATH: &'static str = "mineweb/dist";
+static CONFIG_VERSION: u64 = 1;
 
 struct State {
     servers: Vec<Server>,
@@ -45,11 +47,14 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                         let bytes = &data.as_bytes();
                         let cmd = match serde_cbor::from_slice::<Command>(bytes) {
                             Ok(v) => v,
-                            Err(e) => return eprintln!("error parsing command: {:?}", e),
+                            Err(e) => return error!("error parsing command: {:?}", e),
                         };
 
                         let mut servers = {
-                            let lock = state.lock().expect("failed to lock mutex");
+                            let lock = match state.lock() {
+                                Ok(l) => l,
+                                Err(e) => return error!("failed to lock mutex: {:?}", e),
+                            };
                             lock.servers.clone()
                         };
 
@@ -67,14 +72,18 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                             }
                         };
 
-                        let msg =
-                            serde_cbor::to_vec(&res).expect("failed to serialize ws response");
+                        let msg = match serde_cbor::to_vec(&res) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                return error!("failed to serialize command response: {:?}", e)
+                            }
+                        };
 
                         if let Err(e) = tx.send(Message::binary(msg)).await {
-                            eprintln!("error sending ws message: {:?}", e);
+                            error!("error sending ws message: {:?}", e);
                         }
                     }
-                    Err(e) => eprintln!("error getting ws message: {:?}", e),
+                    Err(e) => error!("error getting ws message: {:?}", e),
                 }
             }
         }
@@ -105,27 +114,31 @@ fn build_app() -> App<'static, 'static> {
 
 #[tokio::main]
 async fn main() {
+    pretty_env_logger::init_custom_env("MINED_LOG");
+
     let matches = build_app().get_matches();
 
     let config = Path::new(matches.value_of("config").unwrap_or("/etc/mined/mined.yml"));
 
     let mut config_file = match File::open(config).await {
         Ok(f) => f,
-        Err(e) => return eprintln!("failed to open config file: {}", e),
+        Err(e) => return error!("failed to open config file: {}", e),
     };
 
     let mut config = vec![];
     if let Err(e) = config_file.read_to_end(&mut config).await {
-        return eprintln!("failed to read config file: {}", e);
+        return error!("failed to read config file: {}", e);
     }
 
     let config = match serde_yaml::from_slice::<Config>(&config) {
         Ok(c) => c,
-        Err(e) => return eprintln!("failed to parse config: {}", e),
+        Err(e) => return error!("failed to parse config: {}", e),
     };
 
-    if config.version > 1 {
-        return eprintln!("unsupported config version");
+    if config.version > CONFIG_VERSION {
+        return error!("unsupported config version");
+    } else if config.version < CONFIG_VERSION {
+        warn!("current config is outdated, please update");
     }
 
     let state = Arc::new(Mutex::new(State::new(config)));
@@ -149,5 +162,6 @@ async fn main() {
     let routes = idx.or(dirs).or(ws);
 
     let addr = ([127, 0, 0, 1], 3000);
+    info!("starting server");
     warp::serve(routes).run(addr).await;
 }

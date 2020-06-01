@@ -13,8 +13,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 yew = "0.16.2"
-wasm-bindgen = "0.2.62"
+yew-router = "0.13.0"
+wasm-bindgen = "0.2.63"
 minelib = { path = "../minelib" }
-web-sys = { version = "0.3.39", features = ["BinaryType", "MessageEvent", "WebSocket"] }
-js-sys = "0.3.39"
+web-sys = { version = "0.3.40", features = ["BinaryType", "MessageEvent", "WebSocket"] }
+js-sys = "0.3.40"
 serde_cbor = "0.11.1"
+log = "0.4.8"
+web_logger = "0.2.0"

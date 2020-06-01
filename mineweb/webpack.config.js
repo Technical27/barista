@@ -5,7 +5,7 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 const distPath = path.resolve(__dirname, 'dist');
 module.exports = () => {
   return {
-    entry: './bootstrap.js',
+    entry: ['./bootstrap', './sass/index.sass'],
     output: {
       path: distPath,
       filename: 'mineweb.js',
@@ -19,5 +19,29 @@ module.exports = () => {
       }),
     ],
     watch: false,
+    module: {
+      rules: [
+        {
+          test: /\.s[ac]ss$/i,
+          use: [
+            {
+              loader: 'file-loader',
+              options: {
+                name: '[name].css',
+              },
+            },
+            {
+              loader: 'extract-loader',
+            },
+            {
+              loader: 'css-loader?-url',
+            },
+            {
+              loader: 'sass-loader',
+            },
+          ],
+        },
+      ],
+    },
   };
 };

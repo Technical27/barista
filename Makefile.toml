@@ -14,3 +14,4 @@ dependencies = ["build-web"]
 command = "cargo"
 args = ["run", "--bin", "mined", "--", "-c", "example.yml"]
 dependencies = ["build"]
+env = { "MINED_LOG" = "info" }
