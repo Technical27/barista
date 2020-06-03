@@ -148,18 +148,16 @@ async fn main() {
         .expect("failed to get current directory")
         .join(matches.value_of("website-path").unwrap_or(WEBSITE_PATH));
 
-    let idx = warp::get()
-        .and(warp::path::end())
-        .and(warp::fs::file(path.join("index.html")));
+    let dirs = warp::get().and(warp::fs::dir(path.clone()));
 
-    let dirs = warp::get().and(warp::fs::dir(path));
+    let idx = warp::get().and(warp::fs::file(path.join("index.html")));
 
     let ws = warp::path("cmd")
         .and(warp::ws())
         .and(state.clone())
         .map(handle_ws);
 
-    let routes = idx.or(dirs).or(ws);
+    let routes = dirs.or(ws).or(idx);
 
     let addr = ([127, 0, 0, 1], 3000);
     info!("starting server");

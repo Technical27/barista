@@ -18,11 +18,13 @@ enum AppRoute {
     Index,
 }
 
+type AppLink = (&'static str, AppRoute);
+
 struct App {
     link: ComponentLink<Self>,
     server_list: Vec<Server>,
     ws: WebSocket,
-    nav_items: Vec<(&'static str, AppRoute)>,
+    nav_items: Vec<AppLink>,
 }
 
 impl App {
@@ -59,7 +61,7 @@ impl App {
         callback.forget();
     }
 
-    fn gen_link(&self, link: &(&'static str, AppRoute)) -> Html {
+    fn gen_link(link: &AppLink) -> Html {
         html! {
             <RouterAnchor<AppRoute> route={link.1} classes="nav-item">
                 { link.0.clone() }
@@ -114,7 +116,7 @@ impl Component for App {
             <div id="app">
                 <div id="nav-bar">
                     <span id="nav-title">{ "Menu" }</span>
-                    { for self.nav_items.iter().map(|l| self.gen_link(l)) }
+                    { for self.nav_items.iter().map(Self::gen_link) }
                 </div>
                 <div id="page">
                     <Router<AppRoute, ()> render={routes} />
