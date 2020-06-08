@@ -4,8 +4,10 @@ use log::{error, info, warn};
 use minelib::command::*;
 use minelib::config::Config;
 use minelib::server::{Server, Status};
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
+use std::process;
 use std::sync::{Arc, Mutex};
 use tokio::fs::File;
 use tokio::prelude::*;
@@ -17,6 +19,7 @@ static CONFIG_VERSION: u64 = 1;
 
 struct State {
     servers: Vec<Server>,
+    processes: HashMap<usize, process::Child>,
 }
 
 impl State {
@@ -26,7 +29,10 @@ impl State {
             let s = config.servers[i].clone();
             servers.push(Server::new(i, s));
         }
-        Self { servers }
+        Self {
+            servers,
+            processes: HashMap::new(),
+        }
     }
 }
 
@@ -50,23 +56,35 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                             Err(e) => return error!("error parsing command: {:?}", e),
                         };
 
-                        let mut servers = {
-                            let lock = match state.lock() {
-                                Ok(l) => l,
-                                Err(e) => return error!("failed to lock mutex: {:?}", e),
-                            };
-                            lock.servers.clone()
-                        };
-
                         let res = match cmd {
-                            Command::GetServers => CommandResult::UpdateServers(servers),
+                            Command::GetServers => {
+                                CommandResult::UpdateServers(state.lock().unwrap().servers.clone())
+                            }
                             Command::StartServer(id) => {
-                                let server = &mut servers[id];
+                                let mut lock = state.lock().unwrap();
+                                let server = &mut lock.servers[id].clone();
+                                let cfg = server.config.clone();
+                                let dir = Path::new(&cfg.dir);
+                                let jar = dir.join(cfg.jar);
+                                let mut args = vec![
+                                    "-jar".to_string(),
+                                    jar.to_str().unwrap().to_string(),
+                                    "nogui".to_string(),
+                                ];
+                                args.append(&mut cfg.args.clone());
+                                let child = process::Command::new("java")
+                                    .args(args)
+                                    .current_dir(dir)
+                                    .spawn()
+                                    .unwrap();
+                                lock.processes.insert(id, child);
                                 server.status = Status::Open;
                                 CommandResult::UpdateServer(id, server.clone())
                             }
                             Command::StopServer(id) => {
-                                let server = &mut servers[id];
+                                let mut lock = state.lock().unwrap();
+                                let server = &mut lock.servers[id].clone();
+                                lock.processes.get_mut(&id).unwrap().kill().unwrap();
                                 server.status = Status::Stopped;
                                 CommandResult::UpdateServer(id, server.clone())
                             }

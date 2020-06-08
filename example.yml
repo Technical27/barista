@@ -2,8 +2,10 @@
 version: 1
 servers:
   - name: "main"
-    jar: "minecraft-server.jar"
+    dir: "/home/aamaruvi/test"
+    jar: "server.jar"
     args: ["-Xmx2G"]
   - name: "backup"
+    dir: "/home/aamaruvi/test"
     jar: "minecraft-backup.jar"
     args: ["-Xmx1G"]

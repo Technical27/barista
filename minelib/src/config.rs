@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ServerConfig {
     pub name: String,
+    pub dir: String,
     pub jar: String,
     pub args: Vec<String>,
 }
