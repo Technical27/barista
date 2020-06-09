@@ -71,6 +71,20 @@ impl std::fmt::Display for WebsocketError {
 
 impl std::error::Error for WebsocketError {}
 
+#[cfg(unix)]
+fn kill_child(child: process::Child) -> Result<(), nix::Error> {
+    use nix::sys::signal::{self, Signal};
+    use nix::unistd::Pid;
+
+    signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM)
+}
+
+#[cfg(windows)]
+fn kill_child(child: process::Child) {
+    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId};
+    child.kill().unwrap();
+}
+
 fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError> {
     if !data.is_binary() {
         return Err(WebsocketError::NotBinary);
@@ -83,8 +97,10 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
         Command::GetServers => CommandResult::UpdateServers(state.lock().unwrap().servers.clone()),
         Command::StartServer(id) => {
             let mut lock = state.lock().unwrap();
-            let server = &mut lock.servers[id].clone();
-            let cfg = server.config.clone();
+            let cfg = {
+                let s = &mut lock.servers[id];
+                s.config.clone()
+            };
             let dir = Path::new(&cfg.dir);
             let jar = dir.join(cfg.jar);
             let mut args = vec![
@@ -99,13 +115,18 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
                 .spawn()
                 .unwrap();
             lock.processes.insert(id, child);
-            server.status = Status::Open;
+            let server = {
+                let s = &mut lock.servers[id];
+                s.status = Status::Open;
+                s
+            };
             CommandResult::UpdateServer(id, server.clone())
         }
         Command::StopServer(id) => {
             let mut lock = state.lock().unwrap();
             let server = &mut lock.servers[id].clone();
-            lock.processes.get_mut(&id).unwrap().kill().unwrap();
+            let child = lock.processes.remove(&id).unwrap();
+            kill_child(child).unwrap();
             server.status = Status::Stopped;
             CommandResult::UpdateServer(id, server.clone())
         }
@@ -127,8 +148,11 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
             }) {
                 match m {
                     Ok(m) => {
-                        tx.send(m).await.unwrap();
+                        if let Err(e) = tx.send(m).await {
+                            error!("failed to send ws message: {:?}", e);
+                        }
                     }
+                    Err(WebsocketError::NotBinary) => {}
                     Err(e) => error!("{}", e),
                 }
             }
