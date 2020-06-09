@@ -38,70 +38,98 @@ impl State {
 
 type GlobalState = Arc<Mutex<State>>;
 
+#[derive(Debug)]
+enum WebsocketError {
+    NotBinary,
+    ParseError(serde_cbor::Error),
+    WarpError(warp::Error),
+}
+
+impl From<warp::Error> for WebsocketError {
+    fn from(e: warp::Error) -> Self {
+        Self::WarpError(e)
+    }
+}
+
+impl From<serde_cbor::Error> for WebsocketError {
+    fn from(e: serde_cbor::Error) -> Self {
+        Self::ParseError(e)
+    }
+}
+
+impl std::fmt::Display for WebsocketError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let msg = match self {
+            Self::NotBinary => "not a binary websocket message".to_string(),
+            Self::ParseError(e) => format!("failed to parse/serialize websocket message: {}", e),
+            Self::WarpError(e) => format!("server error: {}", e),
+        };
+
+        write!(f, "{}", msg)
+    }
+}
+
+impl std::error::Error for WebsocketError {}
+
+fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError> {
+    if !data.is_binary() {
+        return Err(WebsocketError::NotBinary);
+    }
+
+    let bytes = &data.as_bytes();
+    let cmd = serde_cbor::from_slice::<Command>(bytes)?;
+
+    let res = match cmd {
+        Command::GetServers => CommandResult::UpdateServers(state.lock().unwrap().servers.clone()),
+        Command::StartServer(id) => {
+            let mut lock = state.lock().unwrap();
+            let server = &mut lock.servers[id].clone();
+            let cfg = server.config.clone();
+            let dir = Path::new(&cfg.dir);
+            let jar = dir.join(cfg.jar);
+            let mut args = vec![
+                "-jar".to_string(),
+                jar.to_str().unwrap().to_string(),
+                "nogui".to_string(),
+            ];
+            args.append(&mut cfg.args.clone());
+            let child = process::Command::new("java")
+                .args(args)
+                .current_dir(dir)
+                .spawn()
+                .unwrap();
+            lock.processes.insert(id, child);
+            server.status = Status::Open;
+            CommandResult::UpdateServer(id, server.clone())
+        }
+        Command::StopServer(id) => {
+            let mut lock = state.lock().unwrap();
+            let server = &mut lock.servers[id].clone();
+            lock.processes.get_mut(&id).unwrap().kill().unwrap();
+            server.status = Status::Stopped;
+            CommandResult::UpdateServer(id, server.clone())
+        }
+    };
+
+    let msg = serde_cbor::to_vec(&res)?;
+
+    Ok(Message::binary(msg))
+}
+
 fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
     let state = state.clone();
     ws.on_upgrade(|socket| async move {
         let (mut tx, mut rx) = socket.split();
         loop {
-            if let Some(msg) = rx.next().await {
-                match msg {
-                    Ok(data) => {
-                        if !data.is_binary() {
-                            return;
-                        }
-
-                        let bytes = &data.as_bytes();
-                        let cmd = match serde_cbor::from_slice::<Command>(bytes) {
-                            Ok(v) => v,
-                            Err(e) => return error!("error parsing command: {:?}", e),
-                        };
-
-                        let res = match cmd {
-                            Command::GetServers => {
-                                CommandResult::UpdateServers(state.lock().unwrap().servers.clone())
-                            }
-                            Command::StartServer(id) => {
-                                let mut lock = state.lock().unwrap();
-                                let server = &mut lock.servers[id].clone();
-                                let cfg = server.config.clone();
-                                let dir = Path::new(&cfg.dir);
-                                let jar = dir.join(cfg.jar);
-                                let mut args = vec![
-                                    "-jar".to_string(),
-                                    jar.to_str().unwrap().to_string(),
-                                    "nogui".to_string(),
-                                ];
-                                args.append(&mut cfg.args.clone());
-                                let child = process::Command::new("java")
-                                    .args(args)
-                                    .current_dir(dir)
-                                    .spawn()
-                                    .unwrap();
-                                lock.processes.insert(id, child);
-                                server.status = Status::Open;
-                                CommandResult::UpdateServer(id, server.clone())
-                            }
-                            Command::StopServer(id) => {
-                                let mut lock = state.lock().unwrap();
-                                let server = &mut lock.servers[id].clone();
-                                lock.processes.get_mut(&id).unwrap().kill().unwrap();
-                                server.status = Status::Stopped;
-                                CommandResult::UpdateServer(id, server.clone())
-                            }
-                        };
-
-                        let msg = match serde_cbor::to_vec(&res) {
-                            Ok(m) => m,
-                            Err(e) => {
-                                return error!("failed to serialize command response: {:?}", e)
-                            }
-                        };
-
-                        if let Err(e) = tx.send(Message::binary(msg)).await {
-                            error!("error sending ws message: {:?}", e);
-                        }
+            if let Some(m) = rx.next().await.map(|m| {
+                m.map_err(|e| e.into())
+                    .and_then(|msg| serve_ws(msg, state.clone()))
+            }) {
+                match m {
+                    Ok(m) => {
+                        tx.send(m).await.unwrap();
                     }
-                    Err(e) => error!("error getting ws message: {:?}", e),
+                    Err(e) => error!("{}", e),
                 }
             }
         }
