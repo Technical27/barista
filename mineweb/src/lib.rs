@@ -1,6 +1,6 @@
 use log::{error, trace};
 use minelib::command::*;
-use minelib::server::Server;
+use minelib::server::ServerData;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
@@ -22,7 +22,7 @@ type AppLink = (&'static str, AppRoute);
 
 struct App {
     link: ComponentLink<Self>,
-    server_list: Vec<Server>,
+    server_list: Vec<ServerData>,
     ws: WebSocket,
     nav_items: Vec<AppLink>,
 }
@@ -36,7 +36,7 @@ impl App {
         let callback = Closure::wrap(Box::new(move |e: MessageEvent| {
             match e.data().dyn_into::<js_sys::ArrayBuffer>().and_then(|abuf| {
                 let data = js_sys::Uint8Array::new(&abuf).to_vec();
-                serde_cbor::from_slice::<CommandResult>(&data).map_err(|e| e.to_string().into())
+                serde_cbor::from_slice::<CommandResponse>(&data).map_err(|e| e.to_string().into())
             }) {
                 Ok(msg) => {
                     trace!("new message: {:?}", msg);
@@ -71,7 +71,7 @@ impl App {
 }
 
 enum Msg {
-    Websocket(CommandResult),
+    Websocket(CommandResponse),
 }
 
 impl Component for App {
@@ -96,8 +96,8 @@ impl Component for App {
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
             Msg::Websocket(res) => match res {
-                CommandResult::UpdateServers(servers) => self.server_list = servers,
-                CommandResult::UpdateServer(idx, server) => self.server_list[idx] = server,
+                CommandResponse::UpdateServers(servers) => self.server_list = servers,
+                CommandResponse::UpdateServer(id, server) => self.server_list[id] = server,
             },
         }
 

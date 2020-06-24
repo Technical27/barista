@@ -1,6 +1,6 @@
 use log::error;
 use minelib::command::*;
-use minelib::server::{Server, Status};
+use minelib::server::{ServerData, Status};
 use web_sys::WebSocket;
 use yew::prelude::*;
 
@@ -15,7 +15,7 @@ macro_rules! neq_assign {
 
 #[derive(Properties, Clone)]
 pub struct Props {
-    pub servers: Vec<Server>,
+    pub servers: Vec<ServerData>,
     pub ws: WebSocket,
 }
 
@@ -25,7 +25,7 @@ pub enum Msg {
 }
 
 pub struct ServerPage {
-    servers: Vec<Server>,
+    servers: Vec<ServerData>,
     ws: WebSocket,
     link: ComponentLink<Self>,
 }
@@ -40,7 +40,7 @@ impl ServerPage {
         }
     }
 
-    fn handle_button(server: &Server) -> Msg {
+    fn handle_button(server: &ServerData) -> Msg {
         let cmd = match server.status {
             Status::Open => Command::StopServer(server.id),
             Status::Stopped => Command::StartServer(server.id),
@@ -50,7 +50,7 @@ impl ServerPage {
         Msg::SendWebsocket(cmd)
     }
 
-    fn format_server(&self, server: &Server) -> Html {
+    fn format_server(&self, server: &ServerData) -> Html {
         let server = server.clone();
         let s = server.clone();
         html! {

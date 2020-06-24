@@ -3,31 +3,36 @@ use futures::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use minelib::command::*;
 use minelib::config::Config;
-use minelib::server::{Server, Status};
+use minelib::server::{ServerData, Status};
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
-use std::process;
+use std::process::{self, Child};
 use std::sync::{Arc, Mutex};
 use tokio::fs::File;
 use tokio::prelude::*;
 use warp::ws::Message;
 use warp::Filter;
 
+mod server;
+
+use server::Server;
+
 static WEBSITE_PATH: &'static str = "mineweb/dist";
 static CONFIG_VERSION: u64 = 1;
 
 struct State {
     servers: Vec<Server>,
-    processes: HashMap<usize, process::Child>,
+    processes: HashMap<usize, Child>,
 }
 
 impl State {
     pub fn new(config: Config) -> Self {
         let mut servers = vec![];
-        for i in 0..config.servers.len() {
-            let s = config.servers[i].clone();
-            servers.push(Server::new(i, s));
+        for id in 0..config.servers.len() {
+            let cfg = config.servers[id].clone();
+            let data = ServerData::new(id, cfg);
+            servers.push(Server::new(data));
         }
         Self {
             servers,
@@ -91,7 +96,7 @@ impl std::fmt::Display for WebsocketError {
 impl std::error::Error for WebsocketError {}
 
 #[cfg(unix)]
-fn kill_child(child: process::Child) -> Result<(), nix::Error> {
+fn kill_child(child: Child) -> Result<(), nix::Error> {
     use nix::sys::signal::{self, Signal};
     use nix::unistd::Pid;
 
@@ -113,12 +118,16 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
     let cmd = serde_cbor::from_slice::<Command>(bytes)?;
 
     let res = match cmd {
-        Command::GetServers => CommandResult::UpdateServers(state.lock().unwrap().servers.clone()),
+        Command::GetServers => {
+            let lock = state.lock().unwrap();
+            let server_data = lock.servers.iter().map(|s| s.data.clone()).collect();
+            CommandResponse::UpdateServers(server_data)
+        }
         Command::StartServer(id) => {
             let mut lock = state.lock().unwrap();
             let cfg = {
                 let s = &mut lock.servers[id];
-                s.config.clone()
+                s.data.config.clone()
             };
             let dir = Path::new(&cfg.dir);
             let jar = dir.join(cfg.jar);
@@ -128,26 +137,38 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
                 "nogui".to_string(),
             ];
             args.append(&mut cfg.args.clone());
-            let child = process::Command::new("java")
+            let res = process::Command::new("java")
                 .args(args)
                 .current_dir(dir)
-                .spawn()
-                .unwrap();
-            lock.processes.insert(id, child);
-            let server = {
-                let s = &mut lock.servers[id];
-                s.status = Status::Open;
+                .spawn();
+
+            let data = {
+                let mut s = {
+                    let s = &mut lock.servers[id].data;
+                    s.clone()
+                };
+                s.status = match res {
+                    Ok(child) => {
+                        lock.processes.insert(id, child);
+                        Status::Open
+                    }
+                    Err(e) => {
+                        error!("failed to start server: {}", e);
+                        Status::Crashed
+                    }
+                };
                 s
             };
-            CommandResult::UpdateServer(id, server.clone())
+
+            CommandResponse::UpdateServer(id, data.clone())
         }
         Command::StopServer(id) => {
             let mut lock = state.lock().unwrap();
-            let server = &mut lock.servers[id].clone();
+            let server = &mut lock.servers[id].data.clone();
             let child = lock.processes.remove(&id).unwrap();
             kill_child(child).unwrap();
             server.status = Status::Stopped;
-            CommandResult::UpdateServer(id, server.clone())
+            CommandResponse::UpdateServer(id, server.clone())
         }
     };
 

@@ -2,7 +2,7 @@ use super::config::ServerConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Server {
+pub struct ServerData {
     pub id: usize,
     pub name: String,
     pub player_count: u64,
@@ -10,7 +10,7 @@ pub struct Server {
     pub config: ServerConfig,
 }
 
-impl Server {
+impl ServerData {
     pub fn new(id: usize, config: ServerConfig) -> Self {
         Self {
             id,

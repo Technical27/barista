@@ -1,4 +1,4 @@
-use super::server::Server;
+use super::server::ServerData;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -9,7 +9,7 @@ pub enum Command {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum CommandResult {
-    UpdateServers(Vec<Server>),
-    UpdateServer(usize, Server),
+pub enum CommandResponse {
+    UpdateServers(Vec<ServerData>),
+    UpdateServer(usize, ServerData),
 }
