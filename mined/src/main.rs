@@ -57,6 +57,25 @@ impl From<serde_cbor::Error> for WebsocketError {
     }
 }
 
+#[derive(Debug)]
+enum ServerError {
+    InvalidConfig(serde_yaml::Error),
+    InvalidConfigVersion,
+    IoError(std::io::Error),
+}
+
+impl From<serde_yaml::Error> for ServerError {
+    fn from(e: serde_yaml::Error) -> Self {
+        Self::InvalidConfig(e)
+    }
+}
+
+impl From<std::io::Error> for ServerError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
+}
+
 impl std::fmt::Display for WebsocketError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let msg = match self {
@@ -182,31 +201,18 @@ fn build_app() -> App<'static, 'static> {
         )
 }
 
-#[tokio::main]
-async fn main() {
-    pretty_env_logger::init_custom_env("MINED_LOG");
-
-    let matches = build_app().get_matches();
-
+async fn server_init(matches: clap::ArgMatches<'static>) -> Result<(), ServerError> {
     let config = Path::new(matches.value_of("config").unwrap_or("/etc/mined/mined.yml"));
 
-    let mut config_file = match File::open(config).await {
-        Ok(f) => f,
-        Err(e) => return error!("failed to open config file: {}", e),
-    };
+    let mut config_file = File::open(config).await?;
 
     let mut config = vec![];
-    if let Err(e) = config_file.read_to_end(&mut config).await {
-        return error!("failed to read config file: {}", e);
-    }
+    config_file.read_to_end(&mut config).await?;
 
-    let config = match serde_yaml::from_slice::<Config>(&config) {
-        Ok(c) => c,
-        Err(e) => return error!("failed to parse config: {}", e),
-    };
+    let config = serde_yaml::from_slice::<Config>(&config)?;
 
     if config.version > CONFIG_VERSION {
-        return error!("unsupported config version");
+        return Err(ServerError::InvalidConfigVersion);
     } else if config.version < CONFIG_VERSION {
         warn!("current config is outdated, please update");
     }
@@ -232,4 +238,18 @@ async fn main() {
     let addr = ([127, 0, 0, 1], 3000);
     info!("starting server");
     warp::serve(routes).run(addr).await;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    pretty_env_logger::init_custom_env("MINED_LOG");
+
+    let matches = build_app().get_matches();
+
+    server_init(matches)
+        .await
+        .map_err(|e| error!("{:?}", e))
+        .ok();
 }
