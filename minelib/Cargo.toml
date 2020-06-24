@@ -11,3 +11,6 @@ description = "shared library for common structs"
 
 [dependencies]
 serde = { version = "1.0.111", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.17.0"

@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 use futures::{SinkExt, StreamExt};
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use minelib::command::*;
 use minelib::config::Config;
 use minelib::server::{ServerData, Status};
@@ -109,22 +109,15 @@ fn kill_child(child: process::Child) {
     child.kill().unwrap();
 }
 
-fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError> {
-    if !data.is_binary() {
-        return Err(WebsocketError::NotBinary);
-    }
-
-    let bytes = &data.as_bytes();
-    let cmd = serde_cbor::from_slice::<Command>(bytes)?;
-
-    let res = match cmd {
+fn run_command(cmd: Command, state: GlobalState) -> Result<CommandResponse, CommandError> {
+    match cmd {
         Command::GetServers => {
-            let lock = state.lock().unwrap();
+            let lock = state.lock()?;
             let server_data = lock.servers.iter().map(|s| s.data.clone()).collect();
-            CommandResponse::UpdateServers(server_data)
+            Ok(CommandResponse::UpdateServers(server_data))
         }
         Command::StartServer(id) => {
-            let mut lock = state.lock().unwrap();
+            let mut lock = state.lock()?;
             let cfg = {
                 let s = &mut lock.servers[id];
                 s.data.config.clone()
@@ -160,15 +153,34 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
                 s
             };
 
-            CommandResponse::UpdateServer(id, data.clone())
+            Ok(CommandResponse::UpdateServer(id, data.clone()))
         }
         Command::StopServer(id) => {
-            let mut lock = state.lock().unwrap();
+            let mut lock = state.lock()?;
             let server = &mut lock.servers[id].data.clone();
-            let child = lock.processes.remove(&id).unwrap();
-            kill_child(child).unwrap();
+            let child = match lock.processes.remove(&id) {
+                Some(c) => c,
+                None => return Err(CommandError::NonExistentServer(id)),
+            };
+            kill_child(child)?;
             server.status = Status::Stopped;
-            CommandResponse::UpdateServer(id, server.clone())
+            Ok(CommandResponse::UpdateServer(id, server.clone()))
+        }
+    }
+}
+
+fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError> {
+    if !data.is_binary() {
+        return Err(WebsocketError::NotBinary);
+    }
+
+    let bytes = &data.as_bytes();
+    let cmd = serde_cbor::from_slice::<Command>(bytes)?;
+    let res = match run_command(cmd, state) {
+        Ok(res) => res,
+        Err(e) => {
+            error!("error: {}", e);
+            CommandResponse::Error(e)
         }
     };
 
@@ -192,7 +204,7 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
                             error!("failed to send ws message: {:?}", e);
                         }
                     }
-                    Err(WebsocketError::NotBinary) => {}
+                    Err(WebsocketError::NotBinary) => trace!("ws message not binary, skipping"),
                     Err(e) => error!("{}", e),
                 }
             }

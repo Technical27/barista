@@ -758,6 +758,7 @@ dependencies = [
 name = "minelib"
 version = "0.1.0"
 dependencies = [
+ "nix",
  "serde",
 ]
 

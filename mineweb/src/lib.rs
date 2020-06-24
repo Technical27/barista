@@ -98,6 +98,7 @@ impl Component for App {
             Msg::Websocket(res) => match res {
                 CommandResponse::UpdateServers(servers) => self.server_list = servers,
                 CommandResponse::UpdateServer(id, server) => self.server_list[id] = server,
+                CommandResponse::Error(e) => error!("{}", e),
             },
         }
 
