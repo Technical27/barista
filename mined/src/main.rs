@@ -3,11 +3,9 @@ use futures::{SinkExt, StreamExt};
 use log::{error, info, trace, warn};
 use minelib::command::*;
 use minelib::config::Config;
-use minelib::server::{ServerData, Status};
-use std::collections::HashMap;
+use minelib::server::ServerData;
 use std::env;
 use std::path::Path;
-use std::process::{self, Child};
 use std::sync::{Arc, Mutex};
 use tokio::fs::File;
 use tokio::prelude::*;
@@ -23,7 +21,6 @@ static CONFIG_VERSION: u64 = 1;
 
 struct State {
     servers: Vec<Server>,
-    processes: HashMap<usize, Child>,
 }
 
 impl State {
@@ -34,10 +31,7 @@ impl State {
             let data = ServerData::new(id, cfg);
             servers.push(Server::new(data));
         }
-        Self {
-            servers,
-            processes: HashMap::new(),
-        }
+        Self { servers }
     }
 }
 
@@ -95,21 +89,7 @@ impl std::fmt::Display for WebsocketError {
 
 impl std::error::Error for WebsocketError {}
 
-#[cfg(unix)]
-fn kill_child(child: Child) -> Result<(), nix::Error> {
-    use nix::sys::signal::{self, Signal};
-    use nix::unistd::Pid;
-
-    signal::kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM)
-}
-
-#[cfg(windows)]
-fn kill_child(child: process::Child) {
-    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId};
-    child.kill().unwrap();
-}
-
-fn run_command(cmd: Command, state: GlobalState) -> Result<CommandResponse, CommandError> {
+fn run_command(cmd: Command, state: GlobalState) -> CommandResult {
     match cmd {
         Command::GetServers => {
             let lock = state.lock()?;
@@ -118,53 +98,15 @@ fn run_command(cmd: Command, state: GlobalState) -> Result<CommandResponse, Comm
         }
         Command::StartServer(id) => {
             let mut lock = state.lock()?;
-            let cfg = {
-                let s = &mut lock.servers[id];
-                s.data.config.clone()
-            };
-            let dir = Path::new(&cfg.dir);
-            let jar = dir.join(cfg.jar);
-            let mut args = vec![
-                "-jar".to_string(),
-                jar.to_str().unwrap().to_string(),
-                "nogui".to_string(),
-            ];
-            args.append(&mut cfg.args.clone());
-            let res = process::Command::new("java")
-                .args(args)
-                .current_dir(dir)
-                .spawn();
-
-            let data = {
-                let mut s = {
-                    let s = &mut lock.servers[id].data;
-                    s.clone()
-                };
-                s.status = match res {
-                    Ok(child) => {
-                        lock.processes.insert(id, child);
-                        Status::Open
-                    }
-                    Err(e) => {
-                        error!("failed to start server: {}", e);
-                        Status::Crashed
-                    }
-                };
-                s
-            };
-
-            Ok(CommandResponse::UpdateServer(id, data.clone()))
+            let server = &mut lock.servers[id];
+            server.start()
         }
         Command::StopServer(id) => {
             let mut lock = state.lock()?;
-            let server = &mut lock.servers[id].data.clone();
-            let child = match lock.processes.remove(&id) {
-                Some(c) => c,
-                None => return Err(CommandError::NonExistentServer(id)),
-            };
-            kill_child(child)?;
-            server.status = Status::Stopped;
-            Ok(CommandResponse::UpdateServer(id, server.clone()))
+            let server = &mut lock.servers[id];
+            server.stop();
+
+            Ok(CommandResponse::UpdateServer(id, server.data.clone()))
         }
     }
 }
@@ -176,10 +118,11 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
 
     let bytes = &data.as_bytes();
     let cmd = serde_cbor::from_slice::<Command>(bytes)?;
+
     let res = match run_command(cmd, state) {
         Ok(res) => res,
         Err(e) => {
-            error!("error: {}", e);
+            error!("error running command: {}", e);
             CommandResponse::Error(e)
         }
     };

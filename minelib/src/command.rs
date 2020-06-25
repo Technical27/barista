@@ -24,6 +24,8 @@ pub enum CommandError {
     UnknownSystemError,
 }
 
+pub type CommandResult = Result<CommandResponse, CommandError>;
+
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let msg = match self {
