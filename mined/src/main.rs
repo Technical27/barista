@@ -219,10 +219,16 @@ async fn server_init(matches: clap::ArgMatches<'static>) -> Result<(), ServerErr
                 match cmd {
                     RuntimeMsg::NewClient(ws) => clients.push(ws),
                     RuntimeMsg::Msg(msg) => {
-                        for c in &mut clients {
-                            // FIXME remove clients from the list when they disconnect
-                            // otherwise this will panic
-                            c.send(msg.clone()).await.unwrap();
+                        // this is the best solution I could think of to remove dead clients
+                        // and its pretty bad
+                        let mut dead_clients = vec![];
+                        for (id, c) in &mut clients.iter_mut().enumerate() {
+                            if let Err(_) = c.send(msg.clone()).await {
+                                dead_clients.push(id);
+                            }
+                        }
+                        for id in dead_clients {
+                            let _ = clients.swap_remove(id);
                         }
                     }
                 }
