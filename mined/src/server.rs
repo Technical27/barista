@@ -19,7 +19,7 @@ impl Server {
     }
 
     pub fn start(&mut self) -> CommandResult {
-        let cfg = self.data.config.clone();
+        let mut cfg = self.data.config.clone();
         let dir = Path::new(&cfg.dir);
         let jar = dir.join(cfg.jar);
 
@@ -28,10 +28,11 @@ impl Server {
             jar.to_str().unwrap().to_string(),
             "nogui".to_string(),
         ];
-        args.append(&mut cfg.args.clone());
+        cfg.args.append(&mut args);
+        println!("{:?}", cfg.args);
 
         process::Command::new("java")
-            .args(args)
+            .args(cfg.args)
             .current_dir(dir)
             .spawn()
             .map(|c| {
@@ -46,18 +47,27 @@ impl Server {
     }
 
     #[cfg(unix)]
-    pub fn stop(&mut self) {
-        // use nix::sys::signal::{self, Signal};
-        // use nix::unistd::Pid;
-        // signal::kill(Pid::from_raw(self.process.id() as i32), Signal::SIGTERM);
-        // unimplemented!();
+    pub fn stop(&mut self) -> CommandResult {
+        use nix::sys::signal::{self, Signal};
+        use nix::unistd::Pid;
+        signal::kill(
+            Pid::from_raw(self.process.take().unwrap().id() as i32),
+            Signal::SIGTERM,
+        )
+        .map_err(|e| match e {
+            nix::Error::Sys(c) => CommandError::SystemError(c as i32),
+            _ => CommandError::UnknownSystemError,
+        })?;
+        self.data.status = Status::Stopped;
 
-        // fix this
-        self.process.take().unwrap().kill().unwrap();
+        Ok(CommandResponse::UpdateServer(
+            self.data.id,
+            self.data.clone(),
+        ))
     }
 
     #[cfg(windows)]
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> CommandResult {
         unimplemented!();
     }
 }

@@ -101,24 +101,14 @@ impl std::fmt::Display for WebsocketError {
 impl std::error::Error for WebsocketError {}
 
 fn run_command(cmd: Command, state: GlobalState) -> CommandResult {
+    let mut lock = state.lock()?;
     match cmd {
         Command::GetServers => {
-            let lock = state.lock()?;
             let server_data = lock.servers.iter().map(|s| s.data.clone()).collect();
             Ok(CommandResponse::UpdateServers(server_data))
         }
-        Command::StartServer(id) => {
-            let mut lock = state.lock()?;
-            let server = &mut lock.servers[id];
-            server.start()
-        }
-        Command::StopServer(id) => {
-            let mut lock = state.lock()?;
-            let server = &mut lock.servers[id];
-            server.stop();
-
-            Ok(CommandResponse::UpdateServer(id, server.data.clone()))
-        }
+        Command::StartServer(id) => lock.servers[id].start(),
+        Command::StopServer(id) => lock.servers[id].stop(),
     }
 }
 

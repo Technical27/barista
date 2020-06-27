@@ -11,5 +11,6 @@ pkgs.mkShell {
     pkgconfig
     openssl
     gcc
+    adoptopenjdk-bin
   ];
 }
