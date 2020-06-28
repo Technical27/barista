@@ -1,6 +1,6 @@
 use log::error;
-use minelib::command::*;
-use minelib::server::{ServerData, Status};
+use cocoa::command::*;
+use cocoa::server::{ServerData, Status};
 use web_sys::WebSocket;
 use yew::prelude::*;
 

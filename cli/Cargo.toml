@@ -1,16 +1,17 @@
 [package]
-name = "minelib"
+name = "barista-cli"
 version = "0.1.0"
 authors = ["Aamaruvi Yogamani <38222826+Technical27@users.noreply.github.com>"]
 edition = "2018"
 repository = "https://github.com/technical27/minecraft"
 license = "MIT OR Apache-2.0"
-description = "shared library for common structs"
+description = "a cli for barista"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.111", features = ["derive"] }
-
-[target.'cfg(unix)'.dependencies]
-nix = "0.17.0"
+pretty_env_logger = "0.4.0"
+clap = "2.33.1"
+tokio = { version = "0.2.21", features = ["full"] }
+log = "0.4.8"
+serve = { path = "../serve" }

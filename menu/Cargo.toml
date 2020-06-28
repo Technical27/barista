@@ -1,11 +1,11 @@
 [package]
-name = "mineweb"
+name = "menu"
 version = "0.1.0"
 authors = ["Aamaruvi Yogamani <38222826+Technical27@users.noreply.github.com>"]
 edition = "2018"
 repository = "https://github.com/technical27/minecraft"
 license = "MIT OR Apache-2.0"
-description = "a web interface to mined"
+description = "the menu to barista"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 yew = "0.16.2"
 yew-router = "0.13.0"
 wasm-bindgen = "0.2.63"
-minelib = { path = "../minelib" }
+cocoa = { path = "../cocoa" }
 web-sys = { version = "0.3.40", features = ["BinaryType", "MessageEvent", "WebSocket"] }
 js-sys = "0.3.40"
 serde_cbor = "0.11.1"

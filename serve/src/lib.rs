@@ -1,10 +1,9 @@
-use clap::{App, Arg};
+use cocoa::command::*;
+use cocoa::config::Config;
+use cocoa::server::ServerData;
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use log::{error, info, trace, warn};
-use minelib::command::*;
-use minelib::config::Config;
-use minelib::server::ServerData;
 use std::env;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -18,7 +17,7 @@ mod server;
 
 use server::Server;
 
-static WEBSITE_PATH: &'static str = "mineweb/dist";
+static WEBSITE_PATH: &'static str = "menu/dist";
 static CONFIG_VERSION: u64 = 1;
 
 type RuntimeClient = SplitSink<WebSocket, Message>;
@@ -162,30 +161,12 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
     })
 }
 
-fn build_app() -> App<'static, 'static> {
-    App::new("mined")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("Aamaruvi Yogamani")
-        .about("a daemon to control minecraft servers")
-        .arg(
-            Arg::with_name("config")
-                .long("config")
-                .short("c")
-                .value_name("FILE")
-                .help("Sets a custom config")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("website-path")
-                .long("website-path")
-                .value_name("DIR")
-                .help("Sets the directory of the management website")
-                .takes_value(true),
-        )
-}
-
-async fn server_init(matches: clap::ArgMatches<'static>) -> Result<(), ServerError> {
-    let config = Path::new(matches.value_of("config").unwrap_or("/etc/mined/mined.yml"));
+async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), ServerError> {
+    let config = Path::new(
+        matches
+            .and_then(|c| c.value_of("config"))
+            .unwrap_or("/etc/mined/mined.yml"),
+    );
 
     let mut config_file = File::open(config).await?;
 
@@ -231,7 +212,11 @@ async fn server_init(matches: clap::ArgMatches<'static>) -> Result<(), ServerErr
 
     let path = env::current_dir()
         .expect("failed to get current directory")
-        .join(matches.value_of("website-path").unwrap_or(WEBSITE_PATH));
+        .join(
+            matches
+                .and_then(|c| c.value_of("website-path"))
+                .unwrap_or(WEBSITE_PATH),
+        );
 
     let dirs = warp::get().and(warp::fs::dir(path.clone()));
 
@@ -251,11 +236,8 @@ async fn server_init(matches: clap::ArgMatches<'static>) -> Result<(), ServerErr
     Ok(())
 }
 
-#[tokio::main]
-async fn main() {
+pub async fn serve(matches: Option<&clap::ArgMatches<'static>>) {
     pretty_env_logger::init_custom_env("MINED_LOG");
-
-    let matches = build_app().get_matches();
 
     server_init(matches)
         .await

@@ -1,2 +1,2 @@
 [workspace]
-members = ["minelib", "mineweb", "minectl", "mined"]
+members = ["cocoa", "menu", "cli", "serve"]

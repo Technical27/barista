@@ -1,6 +1,6 @@
 use log::{error, trace};
-use minelib::command::*;
-use minelib::server::ServerData;
+use cocoa::command::*;
+use cocoa::server::ServerData;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};

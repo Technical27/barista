@@ -1,1 +1,1 @@
-(cd mineweb && exec yarn build)
+(cd menu && exec yarn build)

@@ -7,11 +7,11 @@ args = ["./build-web.sh"]
 
 [tasks.build]
 command = "cargo"
-args = ["build", "--workspace", "--exclude", "mineweb"]
+args = ["build", "--workspace", "--exclude", "menu"]
 dependencies = ["build-web"]
 
 [tasks.run]
 command = "cargo"
-args = ["run", "--bin", "mined", "--", "-c", "example.yml"]
+args = ["run", "--bin", "barista-cli", "--", "serve", "-c", "example.yml"]
 dependencies = ["build"]
 env = { "MINED_LOG" = "info" }

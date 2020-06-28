@@ -1,6 +1,6 @@
-use minelib::command::*;
-use minelib::server::ServerData;
-use minelib::server::Status;
+use cocoa::command::*;
+use cocoa::server::ServerData;
+use cocoa::server::Status;
 use std::path::Path;
 use std::process::{self, Child};
 
