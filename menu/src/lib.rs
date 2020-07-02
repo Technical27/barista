@@ -1,6 +1,6 @@
-use log::{error, trace};
 use cocoa::command::*;
 use cocoa::server::ServerData;
+use log::{error, trace};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
@@ -29,8 +29,8 @@ struct App {
 
 impl App {
     fn init_websocket(&self) {
-        let ws = self.ws.clone();
-        ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
+        // let ws = self.ws; //.clone();
+        self.ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
         let link = self.link.clone();
         let callback = Closure::wrap(Box::new(move |e: MessageEvent| {
@@ -45,10 +45,11 @@ impl App {
                 Err(e) => error!("failed to get message: {:?}", e),
             }
         }) as Box<dyn FnMut(MessageEvent)>);
-        ws.set_onmessage(Some(callback.as_ref().unchecked_ref()));
+        self.ws
+            .set_onmessage(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
 
-        let ws_clone = ws.clone();
+        let ws_clone = self.ws.clone();
         let callback = Closure::wrap(Box::new(move |_| {
             if let Err(e) = serde_cbor::to_vec(&Command::GetServers)
                 .map_err(|e| e.to_string().into())
@@ -57,7 +58,7 @@ impl App {
                 error!("failed to get servers: {:?}", e)
             }
         }) as Box<dyn FnMut(JsValue)>);
-        ws.set_onopen(Some(callback.as_ref().unchecked_ref()));
+        self.ws.set_onopen(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
     }
 
