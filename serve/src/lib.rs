@@ -183,7 +183,7 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
 
     let (tx, mut rx) = unbounded_channel();
 
-    let task = tokio::task::spawn(async move {
+    let client_task = tokio::task::spawn(async move {
         let mut clients = vec![];
         loop {
             if let Some(cmd) = rx.recv().await {
@@ -208,6 +208,32 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
     });
 
     let state = Arc::new(Mutex::new(State::new(config, tx)));
+
+    let s = state.clone();
+    let server_task = tokio::task::spawn(async move {
+        use std::time::Duration;
+        use tokio::time::delay_for;
+
+        let duration = Duration::from_secs(5);
+
+        loop {
+            delay_for(duration).await;
+            let mut lock = s.lock().unwrap();
+            let tx = lock.tx.clone();
+
+            for server in lock.servers.iter_mut() {
+                if server.update_status() {
+                    let data = server.data.clone();
+                    // TODO: implement error handling
+                    let msg = Message::binary(
+                        serde_cbor::to_vec(&CommandResponse::UpdateServer(data.id, data)).unwrap(),
+                    );
+                    tx.send(RuntimeMsg::Msg(msg)).unwrap();
+                }
+            }
+        }
+    });
+
     let state = warp::any().map(move || state.clone());
 
     let path = env::current_dir()
@@ -231,7 +257,9 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
 
     let addr = ([127, 0, 0, 1], 3000);
     info!("starting server");
-    tokio::join!(task, warp::serve(routes).run(addr)).0.unwrap();
+    let server = warp::serve(routes).run(addr);
+
+    let _ = tokio::join!(server_task, client_task, server);
 
     Ok(())
 }

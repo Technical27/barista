@@ -70,4 +70,25 @@ impl Server {
     pub fn stop(&mut self) -> CommandResult {
         unimplemented!();
     }
+
+    pub fn update_status(&mut self) -> bool {
+        if self.data.status == Status::Open {
+            if let Some(code) = self
+                .process
+                .as_mut()
+                .and_then(|c| c.try_wait().ok())
+                .flatten()
+            {
+                self.data.status = if code.success() {
+                    Status::Stopped
+                } else {
+                    Status::Crashed
+                };
+                self.process.take();
+
+                return true;
+            }
+        }
+        false
+    }
 }
