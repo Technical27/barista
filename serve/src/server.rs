@@ -29,7 +29,6 @@ impl Server {
             "nogui".to_string(),
         ];
         cfg.args.append(&mut args);
-        println!("{:?}", cfg.args);
 
         process::Command::new("java")
             .args(cfg.args)
