@@ -111,6 +111,10 @@ fn run_command(cmd: Command, state: GlobalState) -> CommandResult {
     }
 }
 
+fn serialize_ws(cmd: &CommandResponse) -> Result<Message, serde_cbor::Error> {
+    Ok(Message::binary(serde_cbor::to_vec(cmd)?))
+}
+
 fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError> {
     if !data.is_binary() {
         return Err(WebsocketError::NotBinary);
@@ -127,9 +131,7 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
         }
     };
 
-    let msg = serde_cbor::to_vec(&res)?;
-
-    Ok(Message::binary(msg))
+    Ok(serialize_ws(&res)?)
 }
 
 fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
@@ -224,11 +226,17 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
             for server in lock.servers.iter_mut() {
                 if server.update_status() {
                     let data = server.data.clone();
-                    // TODO: implement error handling
-                    let msg = Message::binary(
-                        serde_cbor::to_vec(&CommandResponse::UpdateServer(data.id, data)).unwrap(),
-                    );
-                    tx.send(RuntimeMsg::Msg(msg)).unwrap();
+                    let cmd = CommandResponse::UpdateServer(data.id, data);
+                    let msg = match serialize_ws(&cmd) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            error!("failed to serialize ws message: {}", e);
+                            continue;
+                        }
+                    };
+                    if let Err(e) = tx.send(RuntimeMsg::Msg(msg)) {
+                        error!("failed to update server: {}", e);
+                    }
                 }
             }
         }
@@ -248,10 +256,7 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
 
     let idx = warp::get().and(warp::fs::file(path.join("index.html")));
 
-    let ws = warp::path("cmd")
-        .and(warp::ws())
-        .and(state.clone())
-        .map(handle_ws);
+    let ws = warp::path("cmd").and(warp::ws()).and(state).map(handle_ws);
 
     let routes = dirs.or(ws).or(idx);
 
