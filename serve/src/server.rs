@@ -53,9 +53,12 @@ impl Server {
             Pid::from_raw(self.process.take().unwrap().id() as i32),
             Signal::SIGTERM,
         )
-        .map_err(|e| match e {
-            nix::Error::Sys(c) => CommandError::SystemError(c as i32),
-            _ => CommandError::UnknownSystemError,
+        .map_err(|e| {
+            self.data.status = Status::Crashed;
+            match e {
+                nix::Error::Sys(c) => CommandError::SystemError(c as i32),
+                _ => CommandError::UnknownSystemError,
+            }
         })?;
         self.data.status = Status::Stopped;
 
