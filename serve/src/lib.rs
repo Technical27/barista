@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::fs::File;
 use tokio::prelude::*;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -82,6 +82,18 @@ impl From<serde_yaml::Error> for ServerError {
 impl From<std::io::Error> for ServerError {
     fn from(e: std::io::Error) -> Self {
         Self::IoError(e)
+    }
+}
+
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let msg = match self {
+            Self::InvalidConfigVersion => "config isn't a valid version".to_string(),
+            Self::InvalidConfig(e) => format!("error parsing config: {}", e),
+            Self::IoError(e) => format!("io error: {}", e),
+        };
+
+        write!(f, "{}", msg)
     }
 }
 
@@ -163,6 +175,60 @@ fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
     })
 }
 
+async fn update_servers(state: GlobalState) {
+    use std::time::Duration;
+    use tokio::time::delay_for;
+
+    let duration = Duration::from_secs(5);
+
+    loop {
+        delay_for(duration).await;
+        let mut lock = state.lock().unwrap();
+        let tx = lock.tx.clone();
+
+        for server in lock.servers.iter_mut() {
+            if server.update_status() {
+                let data = server.data.clone();
+                let cmd = CommandResponse::UpdateServer(data.id, data);
+                let msg = match serialize_ws(&cmd) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        error!("failed to serialize ws message: {}", e);
+                        break;
+                    }
+                };
+                if let Err(e) = tx.send(RuntimeMsg::Msg(msg)) {
+                    error!("failed to update server: {}", e);
+                }
+            }
+        }
+    }
+}
+
+async fn update_clients(mut rx: UnboundedReceiver<RuntimeMsg>) {
+    let mut clients = vec![];
+    loop {
+        if let Some(cmd) = rx.recv().await {
+            match cmd {
+                RuntimeMsg::NewClient(ws) => clients.push(ws),
+                RuntimeMsg::Msg(msg) => {
+                    // this is the best solution I could think of to remove dead clients
+                    // and its pretty bad
+                    let mut dead_clients = vec![];
+                    for (id, c) in &mut clients.iter_mut().enumerate() {
+                        if let Err(_) = c.send(msg.clone()).await {
+                            dead_clients.push(id);
+                        }
+                    }
+                    for id in dead_clients {
+                        let _ = clients.swap_remove(id);
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), ServerError> {
     let config = Path::new(
         matches
@@ -183,63 +249,17 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
         warn!("current config is outdated, please update");
     }
 
-    let (tx, mut rx) = unbounded_channel();
+    let (tx, rx) = unbounded_channel();
 
     let client_task = tokio::task::spawn(async move {
-        let mut clients = vec![];
-        loop {
-            if let Some(cmd) = rx.recv().await {
-                match cmd {
-                    RuntimeMsg::NewClient(ws) => clients.push(ws),
-                    RuntimeMsg::Msg(msg) => {
-                        // this is the best solution I could think of to remove dead clients
-                        // and its pretty bad
-                        let mut dead_clients = vec![];
-                        for (id, c) in &mut clients.iter_mut().enumerate() {
-                            if let Err(_) = c.send(msg.clone()).await {
-                                dead_clients.push(id);
-                            }
-                        }
-                        for id in dead_clients {
-                            let _ = clients.swap_remove(id);
-                        }
-                    }
-                }
-            }
-        }
+        update_clients(rx).await;
     });
 
     let state = Arc::new(Mutex::new(State::new(config, tx)));
 
     let s = state.clone();
     let server_task = tokio::task::spawn(async move {
-        use std::time::Duration;
-        use tokio::time::delay_for;
-
-        let duration = Duration::from_secs(5);
-
-        loop {
-            delay_for(duration).await;
-            let mut lock = s.lock().unwrap();
-            let tx = lock.tx.clone();
-
-            for server in lock.servers.iter_mut() {
-                if server.update_status() {
-                    let data = server.data.clone();
-                    let cmd = CommandResponse::UpdateServer(data.id, data);
-                    let msg = match serialize_ws(&cmd) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            error!("failed to serialize ws message: {}", e);
-                            continue;
-                        }
-                    };
-                    if let Err(e) = tx.send(RuntimeMsg::Msg(msg)) {
-                        error!("failed to update server: {}", e);
-                    }
-                }
-            }
-        }
+        update_servers(s).await;
     });
 
     let state = warp::any().map(move || state.clone());
@@ -253,14 +273,12 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
         );
 
     let dirs = warp::get().and(warp::fs::dir(path.clone()));
-
     let idx = warp::get().and(warp::fs::file(path.join("index.html")));
-
     let ws = warp::path("cmd").and(warp::ws()).and(state).map(handle_ws);
 
     let routes = dirs.or(ws).or(idx);
 
-    let addr = ([127, 0, 0, 1], 3000);
+    let addr = ([0, 0, 0, 0], 3000);
     info!("starting server");
     let server = warp::serve(routes).run(addr);
 
@@ -272,8 +290,5 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
 pub async fn serve(matches: Option<&clap::ArgMatches<'static>>) {
     pretty_env_logger::init_custom_env("MINED_LOG");
 
-    server_init(matches)
-        .await
-        .map_err(|e| error!("{:?}", e))
-        .ok();
+    server_init(matches).await.map_err(|e| error!("{}", e)).ok();
 }
