@@ -17,7 +17,7 @@ mod server;
 
 use server::Server;
 
-static WEBSITE_PATH: &'static str = "menu/dist";
+static WEBSITE_PATH: &'static str = "build/dist";
 static CONFIG_VERSION: u64 = 1;
 
 type RuntimeClient = SplitSink<WebSocket, Message>;
