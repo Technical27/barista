@@ -1,6 +1,7 @@
-use cocoa::command::*;
-use cocoa::config::Config;
-use cocoa::server::ServerData;
+use barista::command::*;
+use barista::config::Config;
+use barista::server::ServerData;
+use clap::{App, Arg};
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use log::{error, info, trace, warn};
@@ -229,12 +230,8 @@ async fn update_clients(mut rx: UnboundedReceiver<RuntimeMsg>) {
     }
 }
 
-async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), ServerError> {
-    let config = Path::new(
-        matches
-            .and_then(|c| c.value_of("config"))
-            .unwrap_or("/etc/mined/mined.yml"),
-    );
+async fn server_init(matches: &clap::ArgMatches<'static>) -> Result<(), ServerError> {
+    let config = Path::new(matches.value_of("config").unwrap_or("/etc/mined/mined.yml"));
 
     let mut config_file = File::open(config).await?;
 
@@ -266,11 +263,7 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
 
     let path = env::current_dir()
         .expect("failed to get current directory")
-        .join(
-            matches
-                .and_then(|c| c.value_of("website-path"))
-                .unwrap_or(WEBSITE_PATH),
-        );
+        .join(matches.value_of("website-path").unwrap_or(WEBSITE_PATH));
 
     let dirs = warp::get().and(warp::fs::dir(path.clone()));
     let idx = warp::get().and(warp::fs::file(path.join("index.html")));
@@ -287,8 +280,27 @@ async fn server_init(matches: Option<&clap::ArgMatches<'static>>) -> Result<(), 
     Ok(())
 }
 
-pub async fn serve(matches: Option<&clap::ArgMatches<'static>>) {
+#[tokio::main]
+async fn main() {
     pretty_env_logger::init_custom_env("MINED_LOG");
-
-    server_init(matches).await.map_err(|e| error!("{}", e)).ok();
+    let matches = App::new("barista")
+        .arg(
+            Arg::with_name("config")
+                .long("config")
+                .short("c")
+                .value_name("FILE")
+                .help("sets a custom config")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("website-path")
+                .value_name("DIR")
+                .help("sets the directory of the web menu")
+                .takes_value(true),
+        )
+        .get_matches();
+    server_init(&matches)
+        .await
+        .map_err(|e| error!("{}", e))
+        .ok();
 }

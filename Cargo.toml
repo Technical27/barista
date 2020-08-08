@@ -1,2 +1,2 @@
 [workspace]
-members = ["cocoa", "menu", "cli", "serve"]
+members = ["barista", "barista-cli", "barista-daemon", "barista-web"]

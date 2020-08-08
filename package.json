@@ -14,7 +14,7 @@
   },
   "scripts": {
     "dev:web": "webpack --mode development",
-    "dev:server": "MINED_LOG=info cargo run -- serve -c example.yml",
+    "dev:server": "MINED_LOG=info cargo run --bin barista-daemon -- -c example.yml",
     "dev": "run-p dev:*"
   }
 }

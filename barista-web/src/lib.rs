@@ -1,5 +1,5 @@
-use cocoa::command::*;
-use cocoa::server::ServerData;
+use barista::command::*;
+use barista::server::ServerData;
 use log::{error, trace};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

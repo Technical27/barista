@@ -1,6 +1,6 @@
+use barista::command::*;
+use barista::server::{ServerData, Status};
 use log::error;
-use cocoa::command::*;
-use cocoa::server::{ServerData, Status};
 use web_sys::WebSocket;
 use yew::prelude::*;
 

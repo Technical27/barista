@@ -1,6 +1,6 @@
-use cocoa::command::*;
-use cocoa::server::ServerData;
-use cocoa::server::Status;
+use barista::command::*;
+use barista::server::ServerData;
+use barista::server::Status;
 use std::path::Path;
 use std::process::{self, Child};
 

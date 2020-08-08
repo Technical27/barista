@@ -2,15 +2,15 @@ const path = require('path');
 const wasmPlugin = require('@wasm-tool/wasm-pack-plugin');
 const copyPlugin = require('copy-webpack-plugin');
 
-const webPath = path.resolve(__dirname, 'menu');
+const webPath = path.resolve(__dirname, 'barista-web');
 const distPath = path.resolve(__dirname, 'build', 'dist');
 module.exports = (_, argv) => {
   return {
     entry: './bootstrap.js',
     output: {
       path: distPath,
-      filename: 'mineweb.js',
-      webassemblyModuleFilename: 'mineweb.wasm',
+      filename: 'barista.js',
+      webassemblyModuleFilename: 'barista.wasm',
     },
     module: {
       rules: [
@@ -23,7 +23,7 @@ module.exports = (_, argv) => {
     plugins: [
       new copyPlugin({ patterns: [path.resolve(webPath, 'static')] }),
       new wasmPlugin({
-        crateDirectory: path.resolve(__dirname, 'menu'),
+        crateDirectory: webPath,
         extraArgs: '--no-typescript',
         outDir: path.resolve(__dirname, 'build', 'pkg'),
       }),
