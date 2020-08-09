@@ -4,6 +4,9 @@ use barista::server::Status;
 use std::path::Path;
 use std::process::{self, Child};
 
+#[cfg(windows)]
+use winapi::shared::{minwindef::BOOL, windef::HWND};
+
 #[derive(Debug)]
 pub struct Server {
     pub data: ServerData,
@@ -23,11 +26,11 @@ impl Server {
         let dir = Path::new(&cfg.dir);
         let jar = dir.join(cfg.jar);
 
-        let mut args = vec![
-            "-jar".to_string(),
-            jar.to_str().unwrap().to_string(),
-            "nogui".to_string(),
-        ];
+        let mut args = vec!["-jar".to_string(), jar.to_str().unwrap().to_string()];
+
+        #[cfg(not(windows))]
+        args.append(&mut vec!["nogui".to_string()]);
+
         cfg.args.append(&mut args);
 
         process::Command::new("java")
@@ -69,8 +72,38 @@ impl Server {
     }
 
     #[cfg(windows)]
+    unsafe extern "system" fn find_window(hwnd: HWND, pid: isize) -> BOOL {
+        use winapi::um::winuser::{GetWindowThreadProcessId, PostMessageA};
+
+        let pid = *(pid as *const u32);
+        let mut w_pid = 0u32;
+
+        GetWindowThreadProcessId(hwnd, &mut w_pid);
+
+        if w_pid == pid {
+            PostMessageA(hwnd, 0x10, 0, 0);
+            return 0;
+        }
+
+        1
+    }
+
+    #[cfg(windows)]
     pub fn stop(&mut self) -> CommandResult {
-        unimplemented!();
+        use winapi::um::winuser::EnumWindows;
+
+        let pid = self.process.take().unwrap().id();
+
+        unsafe {
+            EnumWindows(Some(Self::find_window), (&pid as *const u32) as isize);
+        }
+
+        self.data.status = Status::Stopped;
+
+        Ok(CommandResponse::UpdateServer(
+            self.data.id,
+            self.data.clone(),
+        ))
     }
 
     pub fn update_status(&mut self) -> bool {
