@@ -1,9 +1,7 @@
 let
   sources = import ./nix/sources.nix;
   rust = import ./nix/rust.nix { inherit sources; };
-  pkgs = import sources.nixpkgs { crossSystem = {
-    config = "x86_64-pc-windows-gnu";
-  }; };
+  pkgs = import sources.nixpkgs {};
 in
 pkgs.mkShell {
   buildInputs = with pkgs; [
@@ -13,7 +11,6 @@ pkgs.mkShell {
     pkgconfig
     openssl
     gcc
-    adoptopenjdk-bin
-    pkgsCross.mingwW64
+    jdk
   ];
 }
