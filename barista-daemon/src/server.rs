@@ -81,6 +81,7 @@ impl Server {
         GetWindowThreadProcessId(hwnd, &mut w_pid);
 
         if w_pid == pid {
+            // 0x10 is WM_CLOSE
             PostMessageA(hwnd, 0x10, 0, 0);
             return 0;
         }

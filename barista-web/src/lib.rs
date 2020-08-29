@@ -27,6 +27,8 @@ struct App {
     nav_items: Vec<AppLink>,
 }
 
+type JsFunc<T> = Box<dyn FnMut(T)>;
+
 impl App {
     fn init_websocket(&self) {
         // let ws = self.ws; //.clone();
@@ -44,7 +46,7 @@ impl App {
                 }
                 Err(e) => error!("failed to get message: {:?}", e),
             }
-        }) as Box<dyn FnMut(MessageEvent)>);
+        }) as JsFunc<MessageEvent>);
         self.ws
             .set_onmessage(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
@@ -57,7 +59,7 @@ impl App {
             {
                 error!("failed to get servers: {:?}", e)
             }
-        }) as Box<dyn FnMut(JsValue)>);
+        }) as JsFunc<JsValue>);
         self.ws.set_onopen(Some(callback.as_ref().unchecked_ref()));
         callback.forget();
     }
@@ -109,7 +111,7 @@ impl Component for App {
     fn view(&self) -> Html {
         let s = self.server_list.clone();
         let ws = self.ws.clone();
-        let routes = Router::<AppRoute, ()>::render(move |sw: AppRoute| match sw {
+        let routes = Router::<AppRoute, ()>::render(move |sw| match sw {
             AppRoute::Index => html! {
                 <ServerPage servers={s.clone()} ws={ws.clone()}/>
             },

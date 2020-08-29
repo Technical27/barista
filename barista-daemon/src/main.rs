@@ -5,12 +5,14 @@ use clap::{App, Arg};
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use log::{error, info, trace, warn};
+use std::cmp::Ordering;
 use std::env;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use warp::fs;
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -18,7 +20,7 @@ mod server;
 
 use server::Server;
 
-static WEBSITE_PATH: &'static str = "build/dist";
+static WEBSITE_PATH: &str = "build/dist";
 static CONFIG_VERSION: u64 = 1;
 
 type RuntimeClient = SplitSink<WebSocket, Message>;
@@ -148,7 +150,6 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
 }
 
 fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
-    let state = state.clone();
     ws.on_upgrade(|socket| async move {
         let (tx, mut rx) = socket.split();
         {
@@ -217,7 +218,7 @@ async fn update_clients(mut rx: UnboundedReceiver<RuntimeMsg>) {
                     // and its pretty bad
                     let mut dead_clients = vec![];
                     for (id, c) in &mut clients.iter_mut().enumerate() {
-                        if let Err(_) = c.send(msg.clone()).await {
+                        if c.send(msg.clone()).await.is_err() {
                             dead_clients.push(id);
                         }
                     }
@@ -240,10 +241,14 @@ async fn server_init(matches: &clap::ArgMatches<'static>) -> Result<(), ServerEr
 
     let config = serde_yaml::from_slice::<Config>(&config)?;
 
-    if config.version > CONFIG_VERSION {
-        return Err(ServerError::InvalidConfigVersion);
-    } else if config.version < CONFIG_VERSION {
-        warn!("current config is outdated, please update");
+    match config.version.cmp(&CONFIG_VERSION) {
+        Ordering::Greater => {
+            return Err(ServerError::InvalidConfigVersion);
+        }
+        Ordering::Less => {
+            warn!("current config is outdated, please update");
+        }
+        _ => {}
     }
 
     let (tx, rx) = unbounded_channel();
@@ -265,8 +270,8 @@ async fn server_init(matches: &clap::ArgMatches<'static>) -> Result<(), ServerEr
         .expect("failed to get current directory")
         .join(matches.value_of("website-path").unwrap_or(WEBSITE_PATH));
 
-    let dirs = warp::get().and(warp::fs::dir(path.clone()));
-    let idx = warp::get().and(warp::fs::file(path.join("index.html")));
+    let dirs = warp::get().and(fs::dir(path.clone()));
+    let idx = warp::get().and(fs::file(path.join("index.html")));
     let ws = warp::path("cmd").and(warp::ws()).and(state).map(handle_ws);
 
     let routes = dirs.or(ws).or(idx);
