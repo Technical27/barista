@@ -132,6 +132,6 @@ impl Component for App {
 
 #[wasm_bindgen]
 pub fn run() {
-    web_logger::init();
+    // web_logger::init();
     yew::start_app::<App>();
 }

@@ -8,6 +8,7 @@ pkgs.mkShell {
     yarn
     nodejs
     rust
+    openjdk
     pkgconfig
     openssl
     gcc

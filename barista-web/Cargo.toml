@@ -12,12 +12,12 @@ description = "the web interface to barista-daemon"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-yew = "0.16.2"
-yew-router = "0.13.0"
-wasm-bindgen = "0.2.63"
+yew = "0.17.4"
+yew-router = "0.14.0"
+wasm-bindgen = "0.2.69"
 barista = { path = "../barista" }
-web-sys = { version = "0.3.40", features = ["BinaryType", "MessageEvent", "WebSocket"] }
-js-sys = "0.3.40"
+web-sys = { version = "0.3.46", features = ["BinaryType", "MessageEvent", "WebSocket"] }
+js-sys = "0.3.46"
 serde_cbor = "0.11.1"
-log = "0.4.8"
-web_logger = "0.2.0"
+log = "0.4.11"
+# web_logger = "0.2.0"

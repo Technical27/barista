@@ -2,18 +2,17 @@ use barista::command::*;
 use barista::config::Config;
 use barista::server::ServerData;
 use clap::{App, Arg};
-use futures::stream::SplitSink;
-use futures::{SinkExt, StreamExt};
+use futures::{FutureExt, StreamExt};
 use log::{error, info, trace, warn};
 use std::cmp::Ordering;
 use std::env;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use warp::fs;
-use warp::ws::{Message, WebSocket};
+use warp::ws::Message;
 use warp::Filter;
 
 mod server;
@@ -23,32 +22,30 @@ use server::Server;
 static WEBSITE_PATH: &str = "build/dist";
 static CONFIG_VERSION: u64 = 1;
 
-type RuntimeClient = SplitSink<WebSocket, Message>;
-
-#[derive(Debug)]
-enum RuntimeMsg {
-    Msg(Message),
-    NewClient(RuntimeClient),
-}
-
 struct State {
     servers: Vec<Server>,
-    tx: UnboundedSender<RuntimeMsg>,
+    tx: UnboundedSender<Message>,
+    clients: Vec<UnboundedSender<Result<Message, warp::Error>>>,
 }
 
 impl State {
-    pub fn new(config: Config, tx: UnboundedSender<RuntimeMsg>) -> Self {
+    pub fn new(config: Config, tx: UnboundedSender<Message>) -> Self {
         let mut servers = vec![];
+        let clients = vec![];
         for id in 0..config.servers.len() {
             let cfg = config.servers[id].clone();
             let data = ServerData::new(id, cfg);
             servers.push(Server::new(data));
         }
-        Self { servers, tx }
+        Self {
+            servers,
+            tx,
+            clients,
+        }
     }
 }
 
-type GlobalState = Arc<Mutex<State>>;
+type GlobalState = Arc<RwLock<State>>;
 
 #[derive(Debug)]
 enum WebsocketError {
@@ -115,14 +112,20 @@ impl std::fmt::Display for WebsocketError {
 impl std::error::Error for WebsocketError {}
 
 fn run_command(cmd: Command, state: GlobalState) -> CommandResult {
-    let mut lock = state.lock()?;
     match cmd {
         Command::GetServers => {
+            let lock = state.read()?;
             let server_data = lock.servers.iter().map(|s| s.data.clone()).collect();
             Ok(CommandResponse::UpdateServers(server_data))
         }
-        Command::StartServer(id) => lock.servers[id].start(),
-        Command::StopServer(id) => lock.servers[id].stop(),
+        Command::StartServer(id) => {
+            let mut lock = state.write()?;
+            lock.servers[id].start()
+        }
+        Command::StopServer(id) => {
+            let mut lock = state.write()?;
+            lock.servers[id].stop()
+        }
     }
 }
 
@@ -151,27 +154,41 @@ fn serve_ws(data: Message, state: GlobalState) -> Result<Message, WebsocketError
 
 fn handle_ws(ws: warp::ws::Ws, state: GlobalState) -> impl warp::Reply {
     ws.on_upgrade(|socket| async move {
-        let (tx, mut rx) = socket.split();
+        let (ws_tx, mut ws_rx) = socket.split();
+        let (tx, rx) = unbounded_channel();
+
+        tokio::spawn(rx.forward(ws_tx).map(|res| {
+            if let Err(e) = res {
+                error!("failed to send ws message to client: {}", e);
+            }
+        }));
+
         {
-            let lock = state.lock().unwrap();
-            lock.tx.send(RuntimeMsg::NewClient(tx)).ok();
+            let mut lock = state.write().unwrap();
+            lock.clients.push(tx.clone());
         }
-        loop {
-            if let Some(m) = rx.next().await.map(|m| {
-                m.map_err(|e| e.into())
-                    .and_then(|msg| serve_ws(msg, state.clone()))
-            }) {
-                match m {
-                    Ok(m) => {
-                        let lock = state.lock().unwrap();
-                        lock.tx.send(RuntimeMsg::Msg(m)).ok();
-                    }
-                    Err(WebsocketError::NotBinary) => trace!("ws message not binary, skipping"),
-                    Err(e) => error!("{}", e),
+
+        while let Some(req) = ws_rx.next().await {
+            match req {
+                Ok(msg) => {
+                    let response = match serve_ws(msg, state.clone()) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            match e {
+                                WebsocketError::NotBinary => {
+                                    trace!("ws message not binary, discarding")
+                                }
+                                _ => error!("websocket error: {}", e),
+                            }
+                            continue;
+                        }
+                    };
+
+                    tx.send(Ok(response)).unwrap();
                 }
-            } else {
-                trace!("disconnect");
-                break;
+                Err(e) => {
+                    return error!("error listening to ws message: {}", e);
+                }
             }
         }
     })
@@ -185,7 +202,7 @@ async fn update_servers(state: GlobalState) {
 
     loop {
         delay_for(duration).await;
-        let mut lock = state.lock().unwrap();
+        let mut lock = state.write().unwrap();
         let tx = lock.tx.clone();
 
         for server in lock.servers.iter_mut() {
@@ -199,7 +216,7 @@ async fn update_servers(state: GlobalState) {
                         break;
                     }
                 };
-                if let Err(e) = tx.send(RuntimeMsg::Msg(msg)) {
+                if let Err(e) = tx.send(msg) {
                     error!("failed to update server: {}", e);
                 }
             }
@@ -207,25 +224,12 @@ async fn update_servers(state: GlobalState) {
     }
 }
 
-async fn update_clients(mut rx: UnboundedReceiver<RuntimeMsg>) {
-    let mut clients = vec![];
+async fn update_clients(mut rx: UnboundedReceiver<Message>, state: GlobalState) {
     loop {
-        if let Some(cmd) = rx.recv().await {
-            match cmd {
-                RuntimeMsg::NewClient(ws) => clients.push(ws),
-                RuntimeMsg::Msg(msg) => {
-                    // this is the best solution I could think of to remove dead clients
-                    // and its pretty bad
-                    let mut dead_clients = vec![];
-                    for (id, c) in &mut clients.iter_mut().enumerate() {
-                        if c.send(msg.clone()).await.is_err() {
-                            dead_clients.push(id);
-                        }
-                    }
-                    for id in dead_clients {
-                        let _ = clients.swap_remove(id);
-                    }
-                }
+        if let Some(msg) = rx.recv().await {
+            let lock = state.read().unwrap();
+            for client in lock.clients.iter() {
+                client.send(Ok(msg.clone())).unwrap();
             }
         }
     }
@@ -252,12 +256,12 @@ async fn server_init(matches: &clap::ArgMatches<'static>) -> Result<(), ServerEr
     }
 
     let (tx, rx) = unbounded_channel();
+    let state = Arc::new(RwLock::new(State::new(config, tx)));
 
+    let s = state.clone();
     let client_task = tokio::task::spawn(async move {
-        update_clients(rx).await;
+        update_clients(rx, s).await;
     });
-
-    let state = Arc::new(Mutex::new(State::new(config, tx)));
 
     let s = state.clone();
     let server_task = tokio::task::spawn(async move {

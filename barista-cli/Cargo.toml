@@ -11,6 +11,6 @@ description = "a cli for barista"
 
 [dependencies]
 pretty_env_logger = "0.4.0"
-clap = "2.33.1"
-tokio = { version = "0.2.21", features = ["full"] }
-log = "0.4.8"
+clap = "3.0.0-beta.2"
+tokio = { version = "0.2", features = ["full"] }
+log = "0.4.11"

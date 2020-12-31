@@ -10,7 +10,7 @@ description = "shared library for common structs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.111", features = ["derive"] }
+serde = { version = "1.0.118", features = ["derive"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.17.0"
+nix = "0.19.1"
